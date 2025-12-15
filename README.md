@@ -1,63 +1,61 @@
-Krepšinio treniruoklis: IoT sistema
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
 
-Šis projektas – paprastas IoT principu veikiantis krepšinio treniruoklis, kuris automatiškai fiksuoja pataikymus į krepšį ir rezultatą realiu laiku rodo mobiliojoje programėlėje, naudojant **ESP8266 NodeMCU** ir **Blynk Cloud** platformą.
+char auth[] = "BLYNK_AUTH_TOKEN";
+char ssid[] = "TAVO_WIFI_PAVADINIMAS";
+char pass[] = "TAVO_WIFI_SLAPTAZODIS";
 
-Projektas kurtas kaip kursinio darbo užduotis Kauno kolegijoje.
+const int IR_PIN  = D1;  // IR jutiklis
+const int LED_PIN = D2;  // LED indikatorius
 
----
 
-## Pagrindinės funkcijos
+long score = 0;
+bool shotDetected = false;
+unsigned long lastShotTime = 0;
+const unsigned long debounceMs = 500; // ms
 
-- Pataikymo į krepšį fiksavimas naudojant **IR jutiklį**.
-- Automatinis **taškų skaičiavimas** ir jų saugojimas valdiklyje.
-- **LED indikacija** kiekvieno sėkmingo pataikymo metu.
-- Rezultato siuntimas į **Blynk Cloud** ir rodymas **Android/iOS** programėlėje.
-- Paprasta **debounce** logika, neleidžianti tą patį metimą suskaičiuoti kelis kartus.
+BlynkTimer timer;
 
----
 
-## Sistemos architektūra
+void sendScore() {
+  Blynk.virtualWrite(V0, score);
+}
 
-Sistema sudaryta iš trijų pagrindinių sluoksnių:
+void setup() {
+  pinMode(IR_PIN, INPUT_PULLUP);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
 
-1. **Jutiklių lygmuo**
-   - IR modulis (siųstuvas + imtuvas) po krepšio lanku.
-   - LED indikatorius su rezistoriumi.
+  Serial.begin(9600);
 
-2. **Valdymo lygmuo**
-   - ESP8266 NodeMCU vystymo plokštė.
-   - Kodo logika: pataikymų skaičiavimas, debounce, LED valdymas.
+  Blynk.begin(auth, ssid, pass);
 
-3. **Debesijos ir vartotojo sąsaja**
-   - Blynk Cloud (virtualus PIN taškų reikšmei).
-   - Blynk mobilioji programėlė telefone.
+  timer.setInterval(1000L, sendScore);
+}
 
-Duomenų kelias:
-> Kamuolys kerta IR spindulį → signalas perduodamas į ESP8266 → padidinamas taškų skaičius → trumpam įjungiamas LED → nauja reikšmė nusiunčiama į Blynk → programėlė telefone atnaujina rezultatą realiu laiku.
+void loop() {
+  Blynk.run();
+  timer.run();
 
----
+  int sensorValue = digitalRead(IR_PIN);
+  unsigned long now = millis();
 
-## Naudota įranga
+  if (sensorValue == LOW && !shotDetected && (now - lastShotTime > debounceMs)) {
+    shotDetected = true;
+    lastShotTime = now;
 
-| Komponentas                    | Kiekis | Pastabos                               |
-|--------------------------------|--------|----------------------------------------|
-| ESP8266 NodeMCU                | 1      | Valdiklis su integruotu Wi-Fi         |
-| IR siųstuvas + imtuvas         | 1 rinkinys | Pataikymo fiksavimui                 |
-| LED (5 mm)                     | 1      | Vizualinė indikacija                  |
-| Rezistoriai (pvz. 220 Ω, 10 kΩ)| keli   | LED ir signalo stabilizavimui         |
-| Breadboard                     | 1      | Prototipavimui                         |
-| Jungiamieji laidai             | -      | Valdiklio ir jutiklių sujungimui      |
-| 5 V maitinimo šaltinis / USB   | 1      | Sistemos maitinimui                   |
+    score++;
+    Serial.print("Score: ");
+    Serial.println(score);
 
-Orientacinė komponentų kaina prototipui: **~13,50–15 €**.
+    // LED blyksnis
+    digitalWrite(LED_PIN, HIGH);
+    Blynk.virtualWrite(V0, score);
+    delay(100);
+    digitalWrite(LED_PIN, LOW);
+  }
 
----
-
-## Naudota programinė įranga
-
-- **Arduino IDE** – kodo rašymui ir įkėlimui į ESP8266.
-- **Blynk IoT**:
-  - Blynk Cloud – duomenų priėmimui ir saugojimui.
-  - Blynk mobilioji programėlė (Android / iOS) – rezultatų atvaizdavimui.
-
----
+  if (sensorValue == HIGH) {
+    shotDetected = false;
+  }
+}
